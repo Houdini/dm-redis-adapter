@@ -109,30 +109,32 @@ module DataMapper
       #
       # @api private
       def update_attributes(resources)
-        resources.each do |resource|
-          model = resource.model
-          attributes = resource.dirty_attributes
+        @redis.pipelined do
+          resources.each do |resource|
+            model = resource.model
+            attributes = resource.dirty_attributes
 
-          resource.model.properties.select {|p| p.index}.each do |property|
-            @redis.sadd("#{resource.model.to_s.downcase}:#{property.name}:#{encode(resource[property.name.to_s])}", resource.key.first.to_s)
-          end
-
-          properties_to_set = []
-          properties_to_del = []
-
-          fields = model.properties(self.name).select {|property| attributes.key?(property)}
-          fields.each do |property|
-            value = attributes[property]
-            if value.nil?
-              properties_to_del << property.name
-            else
-              properties_to_set << property.name << attributes[property]
+            resource.model.properties.select {|p| p.index}.each do |property|
+              @redis.sadd("#{resource.model.to_s.downcase}:#{property.name}:#{encode(resource[property.name.to_s])}", resource.key.first.to_s)
             end
-          end
 
-          hash_key = "#{resource.model.to_s.downcase}:#{resource.key.join}"
-          properties_to_del.each {|prop| @redis.hdel(hash_key, prop) }
-          @redis.hmset(hash_key, *properties_to_set) unless properties_to_set.empty?
+            properties_to_set = []
+            properties_to_del = []
+
+            fields = model.properties(self.name).select {|property| attributes.key?(property)}
+            fields.each do |property|
+              value = attributes[property]
+              if value.nil?
+                properties_to_del << property.name
+              else
+                properties_to_set << property.name << attributes[property]
+              end
+            end
+
+            hash_key = "#{resource.model.to_s.downcase}:#{resource.key.join}"
+            properties_to_del.each {|prop| @redis.hdel(hash_key, prop) }
+            @redis.hmset(hash_key, *properties_to_set) unless properties_to_set.empty?
+          end
         end
       end
 
